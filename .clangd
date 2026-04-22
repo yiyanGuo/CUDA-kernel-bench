@@ -1,0 +1,13 @@
+
+CompileFlags:
+    # 添加编译选项
+    Add:
+        - "-std=c++17"
+        - "-I/root/code/CUDA-kernel-bench/include"
+        - "-I/usr/local/cuda/include"
+        - "-DDEBUG"
+        - "-D__CUDACC__"
+
+
+
+
