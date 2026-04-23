@@ -1,5 +1,5 @@
 #include <bench_common.h>
-
+#include "transpose.h"
 #include <vector>
 
 #ifndef TRANSPOSE_ROWS
@@ -18,7 +18,6 @@
 #define TRANSPOSE_REPEAT 5
 #endif
 
-void transpose_naive(const float *input, float *output, int rows, int cols);
 
 namespace {
 
@@ -42,6 +41,7 @@ struct TransposeContext {
 
 static const TransposeImplementation kTransposeImplementations[] = {
     {"naive", transpose_naive},
+    {"tile", transpose_tile}
 };
 
 static void cpu_transpose(const std::vector<float> &input,

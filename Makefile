@@ -23,7 +23,9 @@ CUDAFLAGS ?= -std=c++17 -Iinclude
 # This project currently has two operator types: transpose and vector_add.
 KERNEL_SRCS := \
 	kernel/vector_add/vector_add_naive.cu \
-	kernel/transpose/transpose_naive.cu
+	kernel/vector_add/vector_add_float4.cu \
+	kernel/transpose/transpose_naive.cu \
+	kernel/transpose/transpose_tile.cu
 
 # Benchmark files are flattened as benchmark/bench_<op_name>.cu.
 # Each file owns the implementation registry for its operator type.

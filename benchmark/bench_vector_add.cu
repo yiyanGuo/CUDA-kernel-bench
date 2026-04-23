@@ -1,6 +1,7 @@
 #include <bench_common.h>
-
+#include "vector_add.h"
 #include <vector>
+
 
 #ifndef VECTOR_ADD_N
 #define VECTOR_ADD_N (1 << 24)
@@ -38,6 +39,7 @@ struct VectorAddContext {
 
 static const VectorAddImplementation kVectorAddImplementations[] = {
     {"naive", vector_add_naive},
+    {"float4", vector_add_float4}
 };
 
 static void cpu_vector_add(const std::vector<float> &a,
