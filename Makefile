@@ -20,16 +20,23 @@ TARGET ?= cuda-kernel-bench
 CUDAFLAGS ?= -std=c++17 -Iinclude
 
 # Keep the source list explicit so it is obvious where to register new operators.
-# This project currently has two operator types: transpose and vector_add.
+# This project currently has three operator types: reduction, transpose and vector_add.
 KERNEL_SRCS := \
 	kernel/vector_add/vector_add_naive.cu \
 	kernel/vector_add/vector_add_float4.cu \
 	kernel/transpose/transpose_naive.cu \
-	kernel/transpose/transpose_tile.cu
+	kernel/transpose/transpose_tile.cu \
+	kernel/reduction/reduction_naive.cu \
+	kernel/reduction/reduction_presum.cu \
+	kernel/reduction/reduction_presum_float4.cu \
+	kernel/reduction/reduction_shuffle.cu \
+	kernel/reduction/reduction_grid_stride.cu \
+	kernel/reduction/reduction_integrate.cu
 
 # Benchmark files are flattened as benchmark/bench_<op_name>.cu.
 # Each file owns the implementation registry for its operator type.
 BENCH_SRCS := \
+	benchmark/bench_reduction.cu \
 	benchmark/bench_vector_add.cu \
 	benchmark/bench_transpose.cu
 

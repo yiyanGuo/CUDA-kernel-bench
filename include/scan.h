@@ -1,0 +1,1 @@
+void scan_naive(const float* input, float* output, int N);
