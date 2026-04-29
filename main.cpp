@@ -4,6 +4,7 @@
 bool run_transpose_benchmark();
 bool run_vector_add_benchmark();
 bool run_reduction_benchmark();
+bool run_scan_benchmark();
 
 struct OperatorEntry {
   const char *name;
@@ -14,6 +15,7 @@ static const OperatorEntry kOperators[] = {
     {"reduction", run_reduction_benchmark},
     {"transpose", run_transpose_benchmark},
     {"vector_add", run_vector_add_benchmark},
+    {"scan", run_scan_benchmark},
 };
 
 static const OperatorEntry *find_operator(const char *name) {

@@ -1,5 +1,5 @@
 #include "scan.h"
-#include <bench_common.h>
+#include "bench_common.h"
 
 #include <vector>
 
@@ -34,15 +34,21 @@ struct ScanContext {
 };
 
 static const ScanImplementation kScanImplementations[] = {
-    {"naive", scan_naive}};
+    {"naive", scan_naive},
+    {"one_block", scan_one_block},
+    {"mutl-block", scan_multi_block},
+    {"warp", scan_warp},
+    {"thrust", scan_thrust_exclusive}
+  };
 
 static void cpu_scan(const std::vector<float> &input,
                      std::vector<float> &output) {
   float running_sum = 0.0f;
-  for (std::size_t i = 0; i < input.size(); ++i) {
+  for (std::size_t i = 0; i < input.size() - 1; ++i) {
     running_sum += input[i];
-    output[i] = running_sum;
+    output[i+1] = running_sum;
   }
+  output[0] = 0;
 }
 
 static void prepare_scan_context(ScanContext &context) {

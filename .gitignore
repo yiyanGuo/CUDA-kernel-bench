@@ -1,3 +1,4 @@
 .clangd
 cuda-kernel-bench
 gpu_detect
+*.o

@@ -15,12 +15,13 @@ NVCC ?= nvcc
 TARGET ?= cuda-kernel-bench
 
 # Add shared compile-time parameter overrides here, for example:
-#   make CUDAFLAGS='-D VECTOR_ADD_N=1048576 -D TRANSPOSE_ROWS=1024'
+#   make CUDAFLAGS='-D VECTOR_ADD_N=16777216 -D TRANSPOSE_ROWS=1024'
 # The include path points at ./include so shared headers live in one place.
 CUDAFLAGS ?= -std=c++17 -Iinclude
 
+OBJ_DIR := build
+
 # Keep the source list explicit so it is obvious where to register new operators.
-# This project currently has three operator types: reduction, transpose and vector_add.
 KERNEL_SRCS := \
 	kernel/vector_add/vector_add_naive.cu \
 	kernel/vector_add/vector_add_float4.cu \
@@ -31,23 +32,43 @@ KERNEL_SRCS := \
 	kernel/reduction/reduction_presum_float4.cu \
 	kernel/reduction/reduction_shuffle.cu \
 	kernel/reduction/reduction_grid_stride.cu \
-	kernel/reduction/reduction_integrate.cu
+	kernel/reduction/reduction_integrate.cu \
+	kernel/scan/scan_naive.cu \
+	kernel/scan/scan_one_block.cu \
+	kernel/scan/scan_multi_block.cu \
+	kernel/scan/scan_warp.cu \
+	kernel/scan/thrust_exclusive_scan.cu
 
 # Benchmark files are flattened as benchmark/bench_<op_name>.cu.
-# Each file owns the implementation registry for its operator type.
 BENCH_SRCS := \
 	benchmark/bench_reduction.cu \
 	benchmark/bench_vector_add.cu \
-	benchmark/bench_transpose.cu
+	benchmark/bench_transpose.cu \
+	benchmark/bench_scan.cu
 
-SOURCES := main.cpp include/cuda_utils.h include/bench_common.h $(KERNEL_SRCS) $(BENCH_SRCS)
+# Source list used to generate object list. Headers are intentionally not
+# included here because they aren't compiled directly.
+SRCS := main.cpp $(KERNEL_SRCS) $(BENCH_SRCS)
+
+# Map source files to object files under $(OBJ_DIR), preserving paths.
+# First replace .cu -> $(OBJ_DIR)/%.o, then .cpp -> $(OBJ_DIR)/%.o
+OBJS := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(patsubst %.cu,$(OBJ_DIR)/%.o,$(SRCS)))
 
 .PHONY: all run clean
 
 all: $(TARGET)
 
-$(TARGET): $(SOURCES)
-	$(NVCC) $(CUDAFLAGS) main.cpp $(KERNEL_SRCS) $(BENCH_SRCS) -o $@
+$(TARGET): $(OBJS)
+	$(NVCC) $(CUDAFLAGS) -o $@ $(OBJS)
+
+# Pattern rules: compile .cu and .cpp sources into object files in build/
+$(OBJ_DIR)/%.o: %.cu
+	@mkdir -p $(dir $@)
+	$(NVCC) $(CUDAFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(NVCC) $(CUDAFLAGS) -c $< -o $@
 
 # Example:
 #   make run OP=vector_add
@@ -59,4 +80,4 @@ run: $(TARGET)
 	./$(TARGET) $(OP)
 
 clean:
-	rm -f $(TARGET)
+	rm -rf $(TARGET) $(OBJ_DIR)
