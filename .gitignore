@@ -1,4 +1,7 @@
 .clangd
 cuda-kernel-bench
 gpu_detect
+build/
+__pycache__/
+*.pyc
 *.o

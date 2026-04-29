@@ -22,6 +22,17 @@ __device__ __forceinline__ float4 load_float4(const float *input, int idx,
   return v;
 }
 
+__device__ __forceinline__ void store_float4(float* output, int idx, int N, float4 out) {
+  if(idx + 3 < N) {
+    *reinterpret_cast<float4*>(&output[idx]) = out;
+  } else {
+    if(idx + 0 < N) output[idx + 0] = out.x;
+    if(idx + 1 < N) output[idx + 1] = out.y;
+    if(idx + 2 < N) output[idx + 2] = out.z;
+    if(idx + 3 < N) output[idx + 3] = out.w; 
+  }
+}
+
 static __global__ void kernel_scan_warp(const float *input, float *output, int N,
                                  float *block_sum) {
   __shared__ float warp_sums[WARPS];
@@ -80,14 +91,8 @@ static __global__ void kernel_scan_warp(const float *input, float *output, int N
     add_warp_sums = warp_sums[warp_id - 1];
   }
 
-  if (idx + 0 < N)
-    output[idx + 0] = add_warp_sums + local0;
-  if (idx + 1 < N)
-    output[idx + 1] = add_warp_sums + local1;
-  if (idx + 2 < N)
-    output[idx + 2] = add_warp_sums + local2;
-  if (idx + 3 < N)
-    output[idx + 3] = add_warp_sums + local3;
+  float4 out = make_float4(add_warp_sums + local0, add_warp_sums + local1, add_warp_sums + local2, add_warp_sums + local3);
+  store_float4(output, idx, N, out);
 
   if (tid == blockDim.x - 1) {
     block_sum[blockIdx.x] = warp_sums[WARPS - 1];

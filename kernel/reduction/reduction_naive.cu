@@ -28,20 +28,24 @@ __global__ void kernel_reduction_naive(const float* input, float* output, int N)
 void reduction_naive(const float* input, float* output, int N) {
     const float* d_in = input;
     float* d_out = nullptr;
-    bool free = false;
+    bool need_free = false;
     while(N > 1) {
         int threads = THREAD_PER_BLOCK;
         int blocks = (N + THREAD_PER_BLOCK - 1) / THREAD_PER_BLOCK;
         CUDA_CHECK(cudaMalloc(&d_out, blocks * sizeof(float)));
         kernel_reduction_naive<<<blocks, threads>>>(d_in,d_out, N);
         CUDA_CHECK(cudaGetLastError());
-        if(free) {
+        if(need_free) {
             CUDA_CHECK(cudaFree((void*)d_in));
         }
-        free = true;
+        need_free = true;
         d_in = d_out;
+        d_out = nullptr;
         N = blocks;
     }
 
-    CUDA_CHECK(cudaMemcpy(output, d_out, sizeof(float), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK(cudaMemcpy(output, d_in, sizeof(float), cudaMemcpyDeviceToDevice));
+    if (need_free) {
+        CUDA_CHECK(cudaFree((void*)d_in));
+    }
 }
