@@ -41,7 +41,7 @@ struct TransposeContext {
 
 static const TransposeImplementation kTransposeImplementations[] = {
     {"naive", transpose_naive},
-    {"tile", transpose_tile}
+    {"tile_float4", transpose_tile_float4}
 };
 
 static void cpu_transpose(const std::vector<float> &input,
