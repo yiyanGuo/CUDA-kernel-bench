@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable
 
 import torch
@@ -14,6 +15,8 @@ from kernel.api import KernelImplementation
 class BenchmarkConfig:
     warmup: int = 2
     repeat: int = 5
+    mode: str = "compare"
+    implementation: str | None = None
 
 
 def ensure_cuda_available() -> None:
@@ -36,6 +39,56 @@ def load_backend_implementations(module_names: Iterable[str]) -> list[KernelImpl
             continue
         implementations.extend(module.get_implementations())
     return implementations
+
+
+def implementation_key(implementation: KernelImplementation) -> str:
+    return f"{implementation.backend}:{implementation.name}"
+
+
+def implementation_labels(implementation: KernelImplementation) -> set[str]:
+    labels = {
+        implementation.name,
+        implementation_key(implementation),
+    }
+    if implementation.source is not None:
+        source_path = Path(implementation.source)
+        labels.add(implementation.source)
+        labels.add(source_path.name)
+        labels.add(source_path.stem)
+    return labels
+
+
+def implementation_matches(
+    implementation: KernelImplementation,
+    selected_implementation: str | None,
+) -> bool:
+    if selected_implementation is None:
+        return True
+    return selected_implementation in implementation_labels(implementation)
+
+
+def filter_implementations(
+    implementations: Iterable[KernelImplementation],
+    config: BenchmarkConfig,
+    *,
+    allow_empty: bool = False,
+) -> list[KernelImplementation]:
+    implementations = list(implementations)
+    filtered = [
+        implementation
+        for implementation in implementations
+        if implementation_matches(implementation, config.implementation)
+    ]
+    if config.implementation is not None and not filtered and not allow_empty:
+        available = ", ".join(
+            implementation.source or implementation_key(implementation)
+            for implementation in implementations
+        )
+        raise ValueError(
+            f"Unknown implementation '{config.implementation}'. "
+            f"Available implementations: {available}"
+        )
+    return filtered
 
 
 def nearly_equal(

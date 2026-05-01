@@ -18,10 +18,12 @@ def get_implementations() -> list[KernelImplementation]:
             name="naive",
             backend="cuda",
             launch=module.vector_add_naive,
+            source="kernel/vector_add/vector_add_naive.cu",
         ),
         KernelImplementation(
             name="float4",
             backend="cuda",
             launch=module.vector_add_float4,
+            source="kernel/vector_add/vector_add_float4.cu",
         ),
     ]

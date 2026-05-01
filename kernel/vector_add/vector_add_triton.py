@@ -37,5 +37,6 @@ def get_implementations() -> list[KernelImplementation]:
             name="elementwise",
             backend="triton",
             launch=_launch,
+            source="kernel/vector_add/vector_add_triton.py",
         )
     ]

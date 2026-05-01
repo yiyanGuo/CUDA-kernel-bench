@@ -6,9 +6,11 @@ from benchmark.common import (
     BenchmarkConfig,
     compare_tensors,
     ensure_cuda_available,
+    filter_implementations,
     load_backend_implementations,
     run_implementation,
 )
+from kernel.api import KernelImplementation
 
 
 DEFAULT_N = 1 << 24
@@ -43,6 +45,15 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
             "kernel.vector_add.vector_add_triton",
         ]
     )
+    implementations.append(
+        KernelImplementation(
+            name="torch",
+            backend="pytorch",
+            launch=lambda a, b, out: torch.add(a, b, out=out),
+            source="benchmark/bench_vector_add.py",
+        )
+    )
+    implementations = filter_implementations(implementations, config)
 
     all_passed = True
     for implementation in implementations:

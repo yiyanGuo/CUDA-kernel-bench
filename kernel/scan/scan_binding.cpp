@@ -33,6 +33,7 @@ BIND_SCAN_FN(scan_one_block)
 BIND_SCAN_FN(scan_multi_block)
 BIND_SCAN_FN(scan_thrust_exclusive)
 BIND_SCAN_FN(scan_warp)
+BIND_SCAN_FN(scan_memory_buffer)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("scan_naive", &scan_naive_binding);
@@ -40,4 +41,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("scan_multi_block", &scan_multi_block_binding);
   m.def("scan_thrust_exclusive", &scan_thrust_exclusive_binding);
   m.def("scan_warp", &scan_warp_binding);
+  m.def("scan_memory_buffer", &scan_memory_buffer_binding);
 }

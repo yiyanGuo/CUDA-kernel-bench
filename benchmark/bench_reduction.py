@@ -6,9 +6,11 @@ from benchmark.common import (
     BenchmarkConfig,
     compare_scalars,
     ensure_cuda_available,
+    filter_implementations,
     load_backend_implementations,
     run_implementation,
 )
+from kernel.api import KernelImplementation
 
 
 DEFAULT_N = 1 << 24
@@ -35,6 +37,15 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     device_output = torch.zeros(1, device="cuda", dtype=torch.float32)
 
     implementations = load_backend_implementations(["kernel.reduction.reduction_cuda"])
+    implementations.append(
+        KernelImplementation(
+            name="torch",
+            backend="pytorch",
+            launch=lambda x, out: out.copy_(torch.sum(x).reshape(1)),
+            source="benchmark/bench_reduction.py",
+        )
+    )
+    implementations = filter_implementations(implementations, config)
 
     all_passed = True
     for implementation in implementations:

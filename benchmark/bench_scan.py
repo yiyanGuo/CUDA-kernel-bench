@@ -6,9 +6,11 @@ from benchmark.common import (
     BenchmarkConfig,
     compare_tensors,
     ensure_cuda_available,
+    filter_implementations,
     load_backend_implementations,
     run_implementation,
 )
+from kernel.api import KernelImplementation
 
 
 DEFAULT_N = 1 << 24
@@ -37,6 +39,17 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     device_output = torch.empty_like(device_input)
 
     implementations = load_backend_implementations(["kernel.scan.scan_cuda"])
+    implementations.append(
+        KernelImplementation(
+            name="torch",
+            backend="pytorch",
+            launch=lambda x, out: out.copy_(
+                torch.cat((torch.zeros_like(x[:1]), torch.cumsum(x[:-1], dim=0)))
+            ),
+            source="benchmark/bench_scan.py",
+        )
+    )
+    implementations = filter_implementations(implementations, config)
 
     all_passed = True
     for implementation in implementations:

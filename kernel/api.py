@@ -14,3 +14,4 @@ class KernelImplementation:
     name: str
     backend: str
     launch: LaunchFn
+    source: str | None = None

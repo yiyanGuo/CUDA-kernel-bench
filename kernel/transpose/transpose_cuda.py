@@ -14,10 +14,16 @@ def get_implementations() -> list[KernelImplementation]:
         ],
     )
     return [
-        KernelImplementation("naive", "cuda", module.transpose_naive),
+        KernelImplementation(
+            "naive",
+            "cuda",
+            module.transpose_naive,
+            "kernel/transpose/transpose_naive.cu",
+        ),
         KernelImplementation(
             "tile_float4",
             "cuda",
             module.transpose_tile_float4,
+            "kernel/transpose/transpose_tile_float4.cu",
         ),
     ]

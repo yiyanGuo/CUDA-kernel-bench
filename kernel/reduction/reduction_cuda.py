@@ -18,12 +18,40 @@ def get_implementations() -> list[KernelImplementation]:
         ],
     )
     return [
-        KernelImplementation("naive", "cuda", module.reduction_naive),
-        KernelImplementation("presum", "cuda", module.reduction_presum),
         KernelImplementation(
-            "presum_float4", "cuda", module.reduction_presum_float4
+            "naive",
+            "cuda",
+            module.reduction_naive,
+            "kernel/reduction/reduction_naive.cu",
         ),
-        KernelImplementation("shuffle", "cuda", module.reduction_shuffle),
-        KernelImplementation("grid_stride", "cuda", module.reduction_grid_stride),
-        KernelImplementation("integrate", "cuda", module.reduction_integrate),
+        KernelImplementation(
+            "presum",
+            "cuda",
+            module.reduction_presum,
+            "kernel/reduction/reduction_presum.cu",
+        ),
+        KernelImplementation(
+            "presum_float4",
+            "cuda",
+            module.reduction_presum_float4,
+            "kernel/reduction/reduction_presum_float4.cu",
+        ),
+        KernelImplementation(
+            "shuffle",
+            "cuda",
+            module.reduction_shuffle,
+            "kernel/reduction/reduction_shuffle.cu",
+        ),
+        KernelImplementation(
+            "grid_stride",
+            "cuda",
+            module.reduction_grid_stride,
+            "kernel/reduction/reduction_grid_stride.cu",
+        ),
+        KernelImplementation(
+            "integrate",
+            "cuda",
+            module.reduction_integrate,
+            "kernel/reduction/reduction_integrate.cu",
+        ),
     ]

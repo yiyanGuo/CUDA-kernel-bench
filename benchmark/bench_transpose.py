@@ -6,9 +6,11 @@ from benchmark.common import (
     BenchmarkConfig,
     compare_tensors,
     ensure_cuda_available,
+    filter_implementations,
     load_backend_implementations,
     run_implementation,
 )
+from kernel.api import KernelImplementation
 
 
 DEFAULT_ROWS = 2048
@@ -42,6 +44,15 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     device_output = torch.empty((cols, rows), device="cuda", dtype=torch.float32)
 
     implementations = load_backend_implementations(["kernel.transpose.transpose_cuda"])
+    implementations.append(
+        KernelImplementation(
+            name="torch",
+            backend="pytorch",
+            launch=lambda x, out: out.copy_(x.transpose(0, 1).contiguous()),
+            source="benchmark/bench_transpose.py",
+        )
+    )
+    implementations = filter_implementations(implementations, config)
 
     all_passed = True
     for implementation in implementations:
