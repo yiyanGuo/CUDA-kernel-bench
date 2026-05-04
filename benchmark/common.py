@@ -144,13 +144,20 @@ def compare_scalars(
     return False
 
 
-def measure_min_elapsed_ms(repeat_count: int, launch: Callable[[], None]) -> float:
+def measure_min_elapsed_ms(
+    repeat_count: int,
+    launch: Callable[[], None],
+    prepare: Callable[[], None] | None = None,
+) -> float:
     start_event = torch.cuda.Event(enable_timing=True)
     stop_event = torch.cuda.Event(enable_timing=True)
 
     best_ms = float("inf")
     for _ in range(repeat_count):
         torch.cuda.synchronize()
+        if prepare is not None:
+            prepare()
+            torch.cuda.synchronize()
         start_event.record()
         launch()
         stop_event.record()
@@ -194,13 +201,18 @@ def run_implementation(
     work_units: float,
     work_unit_name: str,
     num_bytes: float,
+    prepare: Callable[[], None] | None = None,
 ) -> bool:
     for _ in range(config.warmup):
+        if prepare is not None:
+            prepare()
         launch()
         torch.cuda.synchronize()
 
-    best_ms = measure_min_elapsed_ms(config.repeat, launch)
+    best_ms = measure_min_elapsed_ms(config.repeat, launch, prepare)
 
+    if prepare is not None:
+        prepare()
     launch()
     torch.cuda.synchronize()
     passed = verify()

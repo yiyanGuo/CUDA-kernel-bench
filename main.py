@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 
 KERNEL_DIR_OPERATOR_ALIASES = {
     "RMSNorm": "rmsnorm",
+    "RoPE": "rope",
 }
 
 

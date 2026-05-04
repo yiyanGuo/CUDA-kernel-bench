@@ -1,5 +1,7 @@
 #include "cuda_runtime.h"
 #include "cuda_utils.h"
+#include <cuda_runtime_api.h>
+#include <driver_types.h>
 
 #define SM_COUNT 114
 #define BLOCK_PER_SM 4
@@ -60,9 +62,15 @@ void reduction_integrate(const float* input, float* output, int N) {
     CUDA_CHECK(cudaMalloc(&buffer1, blocks * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&buffer2, blocks * sizeof(float)));
     
+    cudaEvent_t start;
+    cudaEvent_t end;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&end));
+
+    CUDA_CHECK(cudaEventRecord(start, 0));
     kernel_reduction_integrate<<<blocks, THREAD_PER_BLOCK>>>(input, buffer1, N);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     N = blocks;
     float* d_in = buffer1;
@@ -73,15 +81,25 @@ void reduction_integrate(const float* input, float* output, int N) {
         blocks = (N + ele_per_block - 1) / ele_per_block;
         kernel_reduction_integrate<<<blocks, THREAD_PER_BLOCK>>>(d_in, d_out, N);
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
+        // CUDA_CHECK(cudaDeviceSynchronize());
 
         tmp = d_in;
         d_in = d_out;
         d_out = tmp;
         N = blocks;
     }
+    CUDA_CHECK(cudaEventRecord(end, 0));
+    CUDA_CHECK(cudaEventSynchronize(end));
+
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, end);
+    cudaEventDestroy(start);
+    cudaEventDestroy(end);
+
+    // printf("kernel time: %f\n", ms);
 
     CUDA_CHECK(cudaMemcpy(output, d_in, sizeof(float), cudaMemcpyDeviceToDevice));
     CUDA_CHECK(cudaFree(buffer1));
     CUDA_CHECK(cudaFree(buffer2));
+
 }
