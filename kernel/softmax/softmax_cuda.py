@@ -10,6 +10,7 @@ def get_implementations() -> list[KernelImplementation]:
         [
             "kernel/softmax/softmax_binding.cpp",
             "kernel/softmax/softmax_naive.cu",
+            "kernel/softmax/softmax_2_pass.cu"
         ],
     )
     return [
@@ -19,4 +20,10 @@ def get_implementations() -> list[KernelImplementation]:
             launch=module.softmax_naive,
             source="kernel/softmax/softmax_naive.cu",
         ),
+        KernelImplementation(
+            name="2_pass",
+            backend="cuda",
+            launch=module.softmax_2_pass,
+            source="kernel/softmax/softmax_2_pass.cu",
+        )
     ]

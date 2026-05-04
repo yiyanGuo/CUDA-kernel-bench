@@ -2,6 +2,7 @@
 
 #include <limits>
 
+#include "ATen/core/TensorBody.h"
 #include "softmax.h"
 
 namespace {
@@ -33,7 +34,24 @@ void softmax_naive_binding(const torch::Tensor &logits, torch::Tensor &output,
                 static_cast<int>(logits.size(3)), casual);
 }
 
+void softmax_2_pass_binding(const torch::Tensor &logits, torch::Tensor &output,
+                           bool casual) {
+  check_softmax_tensor(logits, "logits");
+  check_softmax_tensor(output, "output");
+  TORCH_CHECK(logits.sizes() == output.sizes(),
+              "output must match logits shape.");
+
+  softmax_2_pass(logits.data_ptr<float>(), output.data_ptr<float>(),
+                static_cast<int>(logits.size(0)),
+                static_cast<int>(logits.size(1)),
+                static_cast<int>(logits.size(2)),
+                static_cast<int>(logits.size(3)), casual);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("softmax_naive", &softmax_naive_binding, pybind11::arg("logits"),
+        pybind11::arg("output"), pybind11::arg("casual") = false);
+
+  m.def("softmax_2_pass", &softmax_2_pass_binding, pybind11::arg("logits"),
         pybind11::arg("output"), pybind11::arg("casual") = false);
 }

@@ -16,7 +16,7 @@ from kernel.api import KernelImplementation
 DEFAULT_BATCH_SIZE = 4
 DEFAULT_NUM_HEADS = 8
 DEFAULT_QUERY_LEN = 128
-DEFAULT_KEY_LEN = 1024
+DEFAULT_KEY_LEN = (1 << 17)
 
 
 def _resolve_shape(dims: list[int]) -> tuple[int, int, int, int]:
