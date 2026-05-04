@@ -54,8 +54,19 @@ def _make_input(
     )
 
 
-def _reference(input_tensor: torch.Tensor) -> torch.Tensor:
-    return torch.softmax(input_tensor.float(), dim=-1).to(dtype=input_tensor.dtype)
+def _reference(input_tensor: torch.Tensor, casual: bool = False) -> torch.Tensor:
+    logits = input_tensor.float()
+    if casual:
+        query_len = logits.size(-2)
+        key_len = logits.size(-1)
+        query_positions = torch.arange(
+            query_len,
+            device=logits.device,
+        ).unsqueeze(-1)
+        key_positions = torch.arange(key_len, device=logits.device)
+        mask = key_positions <= query_positions
+        logits = logits.masked_fill(~mask, -torch.inf)
+    return torch.softmax(logits, dim=-1).to(dtype=input_tensor.dtype)
 
 
 def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
@@ -66,14 +77,14 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     host_input = _make_input(batch_size, num_heads, query_len, key_len)
     device_input = host_input.to(device="cuda")
     device_output = torch.empty_like(device_input)
-    ref = _reference(device_input)
+    ref = _reference(device_input, config.casual)
 
     implementations = load_backend_implementations(["kernel.softmax.softmax_cuda"])
     implementations.append(
         KernelImplementation(
             name="torch",
             backend="pytorch",
-            launch=lambda x, out: out.copy_(_reference(x)),
+            launch=lambda x, out, casual=False: out.copy_(_reference(x, casual)),
             source="benchmark/bench_softmax.py",
         )
     )
@@ -88,6 +99,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
             launch=lambda impl=implementation: impl.launch(
                 device_input,
                 device_output,
+                config.casual,
             ),
             verify=lambda: compare_tensors(
                 device_output,

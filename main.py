@@ -34,6 +34,16 @@ def discover_operator_modules() -> dict[str, str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    def parse_bool(value: str) -> bool:
+        normalized = value.lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        raise argparse.ArgumentTypeError(
+            "expected a boolean value: true/false, 1/0, yes/no, or on/off"
+        )
+
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
@@ -68,6 +78,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--warmup", type=int, default=2, help="Warmup run count.")
     parser.add_argument("--repeat", type=int, default=5, help="Timed run count.")
+    parser.add_argument(
+        "--casual",
+        "--causal",
+        dest="casual",
+        nargs="?",
+        const="true",
+        default=False,
+        type=parse_bool,
+        help="Enable causal masked softmax for operators that support it.",
+    )
     return parser
 
 
@@ -160,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         repeat=args.repeat,
         mode=args.mode,
         implementation=args.impl,
+        casual=args.casual,
     )
     requested_operator = args.operator
 

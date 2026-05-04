@@ -19,7 +19,8 @@ void check_softmax_tensor(const torch::Tensor &tensor, const char *name) {
 
 } // namespace
 
-void softmax_naive_binding(const torch::Tensor &logits, torch::Tensor &output) {
+void softmax_naive_binding(const torch::Tensor &logits, torch::Tensor &output,
+                           bool casual) {
   check_softmax_tensor(logits, "logits");
   check_softmax_tensor(output, "output");
   TORCH_CHECK(logits.sizes() == output.sizes(),
@@ -29,9 +30,10 @@ void softmax_naive_binding(const torch::Tensor &logits, torch::Tensor &output) {
                 static_cast<int>(logits.size(0)),
                 static_cast<int>(logits.size(1)),
                 static_cast<int>(logits.size(2)),
-                static_cast<int>(logits.size(3)));
+                static_cast<int>(logits.size(3)), casual);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("softmax_naive", &softmax_naive_binding);
+  m.def("softmax_naive", &softmax_naive_binding, pybind11::arg("logits"),
+        pybind11::arg("output"), pybind11::arg("casual") = false);
 }

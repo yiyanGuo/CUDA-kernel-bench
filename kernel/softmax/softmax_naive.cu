@@ -51,6 +51,7 @@ __device__ float block_reduce(float thread_val, float identity, Op op) {
     }
     __syncthreads();
 
+    // 每个线程都能拿到正确结果
     return warp_reduction[0];
 }
 
@@ -60,11 +61,9 @@ __global__ void kernel_softmax_naive(
     int batch_size,
     int num_heads,
     int query_len,
-    int key_len
-    // bool casual
+    int key_len,
+    bool casual
 ) {
-    __shared__ float block_max;
-    __shared__ float block_sum;
     const int batch = blockIdx.z;
     const int head = blockIdx.y;
     const int qid = blockIdx.x;
@@ -74,33 +73,28 @@ __global__ void kernel_softmax_naive(
     float* output_row = output + row_offset;
 
     // mask
-
+    const int valid_key_len = casual ? min(qid + 1, key_len) : key_len;
     // max
     float local_max = -INFINITY;
-    for(int idx = tid; idx < key_len; idx += THREAD_PER_BLOCK) {
+    for(int idx = tid; idx < valid_key_len; idx += THREAD_PER_BLOCK) {
         local_max = fmaxf(local_max, logits_row[idx]);
     }
 
     local_max = block_reduce(local_max, -INFINITY,MaxOp{});
-    if(tid == 0) {
-        block_max = local_max;
-    }
-    __syncthreads();
     
     // exp sum
     float local_sum = 0.0f;
-    for(int idx = tid; idx < key_len; idx += THREAD_PER_BLOCK) {
-        local_sum = local_sum + expf(logits_row[idx] - block_max);
+    for(int idx = tid; idx < valid_key_len; idx += THREAD_PER_BLOCK) {
+        local_sum = local_sum + expf(logits_row[idx] - local_max);
     }
     local_sum = block_reduce(local_sum, 0.0f,SumOp{});
-    if(tid == 0) {
-        block_sum = local_sum;
-    }
-    __syncthreads();
 
     // softmax
-    for(int idx = tid; idx < key_len; idx += THREAD_PER_BLOCK) {
-        output_row[idx] = expf(logits_row[idx] - block_max) / block_sum;
+    for(int idx = tid; idx < valid_key_len; idx += THREAD_PER_BLOCK) {
+        output_row[idx] = expf(logits_row[idx] - local_max) / local_sum;
+    }
+    for(int idx = valid_key_len + tid; idx < key_len; idx += THREAD_PER_BLOCK) {
+        output_row[idx] = 0.0f;
     }
 }
 
@@ -110,7 +104,8 @@ void softmax_naive(
     int batch_size,
     int num_heads,
     int query_len,
-    int key_len  
+    int key_len,
+    bool casual
 ) {
     dim3 gridDim(query_len, num_heads, batch_size);
     dim3 blockDim(128);
@@ -120,7 +115,8 @@ void softmax_naive(
         batch_size,
         num_heads,
         query_len,
-        key_len
+        key_len,
+        casual
     );
     CUDA_CHECK(cudaGetLastError());
 }

@@ -17,6 +17,7 @@ class BenchmarkConfig:
     repeat: int = 5
     mode: str = "compare"
     implementation: str | None = None
+    casual: bool = False
 
 
 def ensure_cuda_available() -> None:
