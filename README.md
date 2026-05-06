@@ -29,6 +29,20 @@ python main.py scan 16777216
 python main.py all
 ```
 
+指定单个 kernel 实现时，可以直接在参数里传 `kernel-name=`，不需要再写
+`--mode single`：
+
+```bash
+python main.py flashattention 1 32 8192 12288 kernel-name=flashattention_naive.cu
+python main.py kernel-name=flashattention_naive.cu 1 32 8192 12288
+```
+
+如果只想测性能、不构造 PyTorch/CPU reference，可以关闭校验：
+
+```bash
+python main.py flashattention 1 32 8192 12288 kernel-name=flashattention_naive.cu --no-verify
+```
+
 默认值：
 
 - `warmup = 2`

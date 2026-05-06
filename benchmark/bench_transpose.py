@@ -38,7 +38,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     host_input = (
         torch.arange(element_count, dtype=torch.float32).remainder(113).mul(0.125)
     ).view(rows, cols)
-    host_ref = host_input.transpose(0, 1).contiguous()
+    host_ref = host_input.transpose(0, 1).contiguous() if config.verify else None
 
     device_input = host_input.to(device="cuda")
     device_output = torch.empty((cols, rows), device="cuda", dtype=torch.float32)
@@ -54,6 +54,11 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     )
     implementations = filter_implementations(implementations, config)
 
+    def verify() -> bool:
+        if host_ref is None:
+            return True
+        return compare_tensors(device_output, host_ref)
+
     all_passed = True
     for implementation in implementations:
         passed = run_implementation(
@@ -61,7 +66,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
             implementation=implementation,
             config=config,
             launch=lambda impl=implementation: impl.launch(device_input, device_output),
-            verify=lambda: compare_tensors(device_output, host_ref),
+            verify=verify,
             work_units=float(element_count),
             work_unit_name="Elem",
             num_bytes=float(element_count) * 2.0 * device_input.element_size(),

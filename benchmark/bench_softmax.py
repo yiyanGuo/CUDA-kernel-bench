@@ -77,7 +77,6 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     host_input = _make_input(batch_size, num_heads, query_len, key_len)
     device_input = host_input.to(device="cuda")
     device_output = torch.empty_like(device_input)
-    ref = _reference(device_input, config.casual)
 
     implementations = load_backend_implementations(["kernel.softmax.softmax_cuda"])
     implementations.append(
@@ -89,6 +88,17 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
         )
     )
     implementations = filter_implementations(implementations, config)
+    ref = _reference(device_input, config.casual) if config.verify else None
+
+    def verify() -> bool:
+        if ref is None:
+            return True
+        return compare_tensors(
+            device_output,
+            ref,
+            abs_tolerance=1e-5,
+            rel_tolerance=1e-5,
+        )
 
     all_passed = True
     for implementation in implementations:
@@ -101,12 +111,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
                 device_output,
                 config.casual,
             ),
-            verify=lambda: compare_tensors(
-                device_output,
-                ref,
-                abs_tolerance=1e-5,
-                rel_tolerance=1e-5,
-            ),
+            verify=verify,
             work_units=float(element_count) * 5.0,
             work_unit_name="OP",
             num_bytes=float(element_count) * 2.0 * device_input.element_size(),

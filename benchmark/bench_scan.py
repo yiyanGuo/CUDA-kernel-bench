@@ -31,9 +31,11 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     n = _resolve_n(dims)
 
     host_input = (torch.arange(n, dtype=torch.float32).remainder(37) - 18).mul(0.125)
-    host_ref = torch.zeros_like(host_input)
-    if n > 1:
-        host_ref[1:] = torch.cumsum(host_input[:-1], dim=0)
+    host_ref = None
+    if config.verify:
+        host_ref = torch.zeros_like(host_input)
+        if n > 1:
+            host_ref[1:] = torch.cumsum(host_input[:-1], dim=0)
 
     device_input = host_input.to(device="cuda")
     device_output = torch.empty_like(device_input)
@@ -51,6 +53,16 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     )
     implementations = filter_implementations(implementations, config)
 
+    def verify() -> bool:
+        if host_ref is None:
+            return True
+        return compare_tensors(
+            device_output,
+            host_ref,
+            abs_tolerance=1e-3,
+            rel_tolerance=1e-3,
+        )
+
     all_passed = True
     for implementation in implementations:
         passed = run_implementation(
@@ -58,12 +70,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
             implementation=implementation,
             config=config,
             launch=lambda impl=implementation: impl.launch(device_input, device_output),
-            verify=lambda: compare_tensors(
-                device_output,
-                host_ref,
-                abs_tolerance=1e-3,
-                rel_tolerance=1e-3,
-            ),
+            verify=verify,
             work_units=float(max(n - 1, 0)),
             work_unit_name="Add",
             num_bytes=float(n) * 2.0 * device_input.element_size(),

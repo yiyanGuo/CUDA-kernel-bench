@@ -12,6 +12,7 @@ from benchmark.common import BenchmarkConfig
 
 BenchmarkFn = Callable[[list[int], BenchmarkConfig], bool]
 REPO_ROOT = Path(__file__).resolve().parent
+KERNEL_NAME_PREFIX = "kernel-name="
 
 
 KERNEL_DIR_OPERATOR_ALIASES = {
@@ -53,12 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("operator", nargs="?", help="Benchmark operator name, or 'all'.")
     parser.add_argument(
-        "dims",
+        "params",
         nargs="*",
-        type=int,
         help=(
-            "Optional dimensions for the selected operator. "
-            "Examples: vector_add 16777216, transpose 2048 4096."
+            "Optional dimensions and kernel selector. "
+            "Examples: vector_add 16777216, transpose 2048 4096, "
+            "flashattention kernel-name=flashattention_naive.cu."
         ),
     )
     parser.add_argument(
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--impl",
         help="Implementation to run in single mode. Accepts name or backend:name.",
+    )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip reference-result verification after timing.",
     )
     parser.add_argument("--warmup", type=int, default=2, help="Warmup run count.")
     parser.add_argument("--repeat", type=int, default=5, help="Timed run count.")
@@ -134,6 +140,59 @@ def infer_operator_from_impl(
     return operator_name if operator_name in operator_modules else None
 
 
+def parse_kernel_name_param(param: str) -> str | None:
+    if not param.startswith(KERNEL_NAME_PREFIX):
+        return None
+    implementation = param[len(KERNEL_NAME_PREFIX):]
+    if not implementation:
+        raise ValueError(f"{KERNEL_NAME_PREFIX} requires a non-empty value.")
+    return implementation
+
+
+def normalize_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    raw_params = list(args.params)
+    dims: list[int] = []
+    selected_kernel: str | None = None
+
+    if args.operator is not None:
+        try:
+            operator_kernel_name = parse_kernel_name_param(args.operator)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if operator_kernel_name is not None:
+            selected_kernel = operator_kernel_name
+            args.operator = None
+
+    for param in raw_params:
+        try:
+            kernel_name = parse_kernel_name_param(param)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if kernel_name is not None:
+            if selected_kernel is not None:
+                parser.error("kernel-name= may only be specified once.")
+            selected_kernel = kernel_name
+            continue
+        try:
+            dims.append(int(param))
+        except ValueError:
+            parser.error(
+                f"invalid dimension or parameter '{param}'. "
+                f"Use integer dimensions or {KERNEL_NAME_PREFIX}<implementation>."
+            )
+
+    if selected_kernel is not None:
+        if args.impl is not None and args.impl != selected_kernel:
+            parser.error("--impl and kernel-name= specify different implementations.")
+        args.impl = selected_kernel
+        args.mode = "single"
+
+    args.dims = dims
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -145,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         print_available_operators(operator_modules)
         return 0
+
+    normalize_args(args, parser)
 
     if args.operator is None:
         if args.mode == "single" and args.impl:
@@ -181,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
         mode=args.mode,
         implementation=args.impl,
         casual=args.casual,
+        verify=not args.no_verify,
     )
     requested_operator = args.operator
 

@@ -90,7 +90,17 @@ def _run_path(
     if not implementations:
         return True, 0
 
-    ref = _reference(dev_in, dev_w, dev_in.dtype)
+    ref = _reference(dev_in, dev_w, dev_in.dtype) if config.verify else None
+
+    def verify() -> bool:
+        if ref is None:
+            return True
+        return compare_tensors(
+            dev_out,
+            ref,
+            abs_tolerance=abs_tolerance,
+            rel_tolerance=rel_tolerance,
+        )
 
     all_passed = True
     work_units = float(num_tokens * hidden_size)
@@ -102,12 +112,7 @@ def _run_path(
             implementation=implementation,
             config=config,
             launch=lambda impl=implementation: impl.launch(dev_in, dev_w, dev_out, EPS),
-            verify=lambda: compare_tensors(
-                dev_out,
-                ref,
-                abs_tolerance=abs_tolerance,
-                rel_tolerance=rel_tolerance,
-            ),
+            verify=verify,
             work_units=work_units,
             work_unit_name="OP",
             num_bytes=num_bytes,

@@ -189,15 +189,6 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     device_cos = host_cos.to(device="cuda")
     device_sin = host_sin.to(device="cuda")
     device_position_ids = host_position_ids.to(device="cuda")
-    ref_q, ref_k = _reference(
-        base_q,
-        base_k,
-        device_cos,
-        device_sin,
-        device_position_ids,
-        rotary_dim,
-        position_offset,
-    )
 
     implementations = load_backend_implementations(["kernel.RoPE.rope_cuda"])
     implementations.append(
@@ -209,12 +200,27 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
         )
     )
     implementations = filter_implementations(implementations, config)
+    ref_q, ref_k = (
+        _reference(
+            base_q,
+            base_k,
+            device_cos,
+            device_sin,
+            device_position_ids,
+            rotary_dim,
+            position_offset,
+        )
+        if config.verify
+        else (None, None)
+    )
 
     def prepare() -> None:
         device_q.copy_(base_q)
         device_k.copy_(base_k)
 
     def verify() -> bool:
+        if ref_q is None or ref_k is None:
+            return True
         q_passed = compare_tensors(
             device_q,
             ref_q,

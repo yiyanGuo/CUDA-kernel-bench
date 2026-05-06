@@ -18,6 +18,7 @@ class BenchmarkConfig:
     mode: str = "compare"
     implementation: str | None = None
     casual: bool = False
+    verify: bool = True
 
 
 def ensure_cuda_available() -> None:
@@ -182,14 +183,15 @@ def print_benchmark_line(
     work_units: float,
     work_unit_name: str,
     num_bytes: float,
-    passed: bool,
+    passed: bool | None,
 ) -> None:
+    verify_status = "SKIP" if passed is None else ("PASS" if passed else "FAIL")
     print(
         f"[{op_name}/{implementation.backend}:{implementation.name}] "
         f"best={best_ms:.4f} ms, "
         f"{to_giga_throughput(work_units, best_ms):.3f} G{work_unit_name}/s, "
         f"{to_bandwidth_gb(num_bytes, best_ms):.3f} GB/s, "
-        f"verify={'PASS' if passed else 'FAIL'}"
+        f"verify={verify_status}"
     )
 
 
@@ -212,11 +214,14 @@ def run_implementation(
 
     best_ms = measure_min_elapsed_ms(config.repeat, launch, prepare)
 
-    if prepare is not None:
-        prepare()
-    launch()
-    torch.cuda.synchronize()
-    passed = verify()
+    if config.verify:
+        if prepare is not None:
+            prepare()
+        launch()
+        torch.cuda.synchronize()
+        passed = verify()
+    else:
+        passed = None
     print_benchmark_line(
         op_name=op_name,
         implementation=implementation,
@@ -226,4 +231,4 @@ def run_implementation(
         num_bytes=num_bytes,
         passed=passed,
     )
-    return passed
+    return True if passed is None else passed

@@ -31,7 +31,11 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     n = _resolve_n(dims)
 
     host_input = (torch.arange(n, dtype=torch.float32).remainder(113) - 56).mul(0.03125)
-    host_ref = host_input.sum(dtype=torch.float64).to(dtype=torch.float32)
+    host_ref = (
+        host_input.sum(dtype=torch.float64).to(dtype=torch.float32)
+        if config.verify
+        else None
+    )
 
     device_input = host_input.to(device="cuda")
     device_output = torch.zeros(1, device="cuda", dtype=torch.float32)
@@ -47,6 +51,16 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
     )
     implementations = filter_implementations(implementations, config)
 
+    def verify() -> bool:
+        if host_ref is None:
+            return True
+        return compare_scalars(
+            device_output.item(),
+            host_ref.item(),
+            abs_tolerance=1e-2,
+            rel_tolerance=1e-3,
+        )
+
     all_passed = True
     for implementation in implementations:
         def launch(impl=implementation) -> None:
@@ -58,12 +72,7 @@ def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
             implementation=implementation,
             config=config,
             launch=launch,
-            verify=lambda: compare_scalars(
-                device_output.item(),
-                host_ref.item(),
-                abs_tolerance=1e-2,
-                rel_tolerance=1e-3,
-            ),
+            verify=verify,
             work_units=float(n - 1),
             work_unit_name="Add",
             num_bytes=float(n) * device_input.element_size() + device_output.element_size(),
