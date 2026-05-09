@@ -4,26 +4,32 @@ from kernel.api import KernelImplementation
 from kernel.cuda_extension import load_extension_from_iterable
 
 
-def get_implementations() -> list[KernelImplementation]:
-    module = load_extension_from_iterable(
+def get_module():
+    return load_extension_from_iterable(
         "cuda_kernel_bench_vector_add",
-        [
-            "kernel/vector_add/vector_add_binding.cpp",
-            "kernel/vector_add/vector_add_naive.cu",
-            "kernel/vector_add/vector_add_float4.cu",
-        ],
+        ["kernel/vector_add/vector_add.cu"],
     )
+
+
+def get_implementations() -> list[KernelImplementation]:
+    module = get_module()
     return [
         KernelImplementation(
-            name="naive",
+            name="dispatch",
             backend="cuda",
-            launch=module.vector_add_naive,
-            source="kernel/vector_add/vector_add_naive.cu",
+            launch=module.vector_add,
+            source="kernel/vector_add/vector_add.cu",
         ),
         KernelImplementation(
-            name="float4",
+            name="f32x4",
             backend="cuda",
-            launch=module.vector_add_float4,
-            source="kernel/vector_add/vector_add_float4.cu",
+            launch=module.vector_add_f32x4,
+            source="kernel/vector_add/vector_add.cu",
+        ),
+        KernelImplementation(
+            name="f16x2",
+            backend="cuda",
+            launch=module.vector_add_f16x2,
+            source="kernel/vector_add/vector_add.cu",
         ),
     ]

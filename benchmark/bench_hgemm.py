@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from benchmark.common import BenchmarkConfig
-from kernel.vector_add.benchmark import run_benchmark as _run_vector_add_benchmark
+from kernel.hgemm.benchmark import run_benchmark as _run_hgemm_benchmark
 
 
 def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
-    return _run_vector_add_benchmark(dims, config)
+    return _run_hgemm_benchmark(dims, config)
