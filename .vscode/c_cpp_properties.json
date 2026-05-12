@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/root/miniconda3/envs/kernel-bench/lib/python3.10/site-packages/torch/include",
+                "/root/miniconda3/envs/kernel-bench/lib/python3.10/site-packages/torch/include/torch/csrc/api/include",
+                "/root/miniconda3/envs/kernel-bench/include/python3.10",
+                "/usr/local/cuda/include",
+                "/root/code/cutlass/include",
+                "/root/code/cutlass/tools/util/include"
+            ],
+            "defines": [
+                "__CUDACC_VER_MAJOR__", 
+                "__CUDA_ARCH__",
+                "__CUDA_ARCH_FEAT_SM90_ALL__"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

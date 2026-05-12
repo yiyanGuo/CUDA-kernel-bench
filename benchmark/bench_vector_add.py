@@ -1,8 +1,0 @@
-from __future__ import annotations
-
-from benchmark.common import BenchmarkConfig
-from kernel.vector_add.benchmark import run_benchmark as _run_vector_add_benchmark
-
-
-def run_benchmark(dims: list[int], config: BenchmarkConfig) -> bool:
-    return _run_vector_add_benchmark(dims, config)
