@@ -21,7 +21,8 @@ using namespace cute;
 
 template <typename T, int TileM, int TileN, int TileK, 
           typename sALayout, typename sBLayout,
-          typename TiledMMA, typename TiledCopyA, typename TiledCopyB>
+          typename TiledMMA, typename TiledCopyA, typename TiledCopyB,
+          typename S2RCopyAtom>
 __global__ void hgemm_shared_memory_kernel(
     const T* Aptr,
     const T* Bptr,
@@ -59,18 +60,26 @@ __global__ void hgemm_shared_memory_kernel(
     auto tBsB = thr_copyB.partition_D(sB);
 
     // shared memory to register
-
     TiledMMA tiled_mma;
     auto thr_mma = tiled_mma.get_slice(threadIdx.x);
-
-    auto tAsA_mma = thr_mma.partition_A(sA);
-    auto tBsB_mma = thr_mma.partition_B(sB);
-
-    auto tCgC = thr_mma.partition_C(gC);
-
     auto tCrA = thr_mma.partition_fragment_A(sA);
     auto tCrB = thr_mma.partition_fragment_B(sB);
+    auto tCgC = thr_mma.partition_C(gC);
     auto tCrC = thr_mma.make_fragment_C(tCgC);
+
+    auto s2r_tiled_copy_a = make_tiled_copy_A(S2RCopyAtom{}, tiled_mma);
+    auto s2r_thr_copy_a = s2r_tiled_copy_a.get_slice(threadIdx.x);
+    auto tAsA_mma = s2r_thr_copy_a.partition_S(sA);
+    auto tCrA_view = s2r_thr_copy_a.retile_D(tCrA);
+
+    auto s2r_tiled_copy_b = make_tiled_copy_B(S2RCopyAtom{}, tiled_mma);
+    auto s2r_thr_copy_b = s2r_tiled_copy_b.get_slice(threadIdx.x);
+    auto tBsB_mma = s2r_thr_copy_b.partition_S(sB);
+    auto tCrB_view = s2r_thr_copy_b.retile_D(tCrB);
+    // auto thr_mma = tiled_mma.get_slice(threadIdx.x);
+
+    // auto tAsA_mma = thr_mma.partition_A(sA);
+    // auto tBsB_mma = thr_mma.partition_B(sB);
 
     clear(tCrC);
 
@@ -86,8 +95,8 @@ __global__ void hgemm_shared_memory_kernel(
         __syncthreads();
 
         // shared memory to registers
-        cute::copy(tAsA_mma, tCrA);
-        cute::copy(tBsB_mma, tCrB);
+        cute::copy(s2r_tiled_copy_a, tAsA_mma, tCrA_view);
+        cute::copy(s2r_tiled_copy_b, tBsB_mma, tCrB_view);
 
         cute::gemm(tiled_mma, tCrA, tCrB, tCrC);
         __syncthreads();
@@ -141,12 +150,16 @@ static void launcher(
     ));
     using TiledCopyB = TiledCopyA;
 
+    using s2r_copy_op = SM75_U32x4_LDSM_N;
+    using s2r_copy_traits = Copy_Traits<s2r_copy_op>;
+    using s2r_copy_atom = Copy_Atom<s2r_copy_traits, half_t>;
+
     dim3 block(cute::size(MMA{}));
     dim3 grid(N / kTileN, M / kTileM);
     hgemm_shared_memory_kernel<
         cute::half_t, kTileM, kTileN, kTileK,
         decltype(sA), decltype(sB), 
-        MMA, TiledCopyA, TiledCopyB
+        MMA, TiledCopyA, TiledCopyB, s2r_copy_atom
     >
     <<<grid, block>>>(
         A, B, C, M, N, K, sA, sB

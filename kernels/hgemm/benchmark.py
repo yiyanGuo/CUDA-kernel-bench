@@ -24,7 +24,9 @@ VERIFY = True
 KERNELS = [
     ("simple", "hgemm_simple.cu", "hgemm_simple"),
     ("shared_memory", "hgemm_shared_memory.cu", "hgemm_shared_memory"),
-    ("2_pipeline", "hgemm_2_pipeline.cu", "hgemm_2_pipeline"),
+    ("2_pipeline", "hgemm_pipeline.cu", "hgemm_2_pipeline"),
+    ("3_pipeline", "hgemm_pipeline.cu", "hgemm_3_pipeline"),
+    ("4_pipeline", "hgemm_pipeline.cu", "hgemm_4_pipeline"),
 ]
 
 
