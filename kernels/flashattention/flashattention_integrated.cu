@@ -77,6 +77,33 @@ __device__ __forceinline__ void copy_half_tile_16b(half* dst, const half* src, i
     }
 }
 
+__device__ __forceinline__ void cp_async_16b(void* dst, const void* src) {
+    uint32_t dst_addr = smem_u32(dst);
+    asm volatile(
+        "cp.async.cg.shared.global [%0], [%1], 16;\n"
+        :: "r"(dst_addr), "l"(src)
+        : "memory"
+    );
+}
+
+__device__ __forceinline__ void cp_async_commit_group() {
+    asm volatile("cp.async.commit_group;\n" ::: "memory");
+}
+
+__device__ __forceinline__ void cp_async_wait_group_0() {
+    asm volatile("cp.async.wait_group 0;\n" ::: "memory");
+}
+
+__device__ __forceinline__ void copy_half_tile_async_16b(half* dst, const half* src, int num_half) {
+    constexpr int HALF_PER_VEC = sizeof(int4) / sizeof(half);
+    int vec_count = num_half / HALF_PER_VEC;
+    int4* dst_vec = reinterpret_cast<int4*>(dst);
+    const int4* src_vec = reinterpret_cast<const int4*>(src);
+    for (int idx = threadIdx.x; idx < vec_count; idx += blockDim.x) {
+        cp_async_16b(dst_vec + idx, src_vec + idx);
+    }
+}
+
 __global__ void kernel_flash_attention_integrated(
     const half* q,
     const half* k,
@@ -88,8 +115,8 @@ __global__ void kernel_flash_attention_integrated(
     int key_len
 ) {
     __shared__ __align__(16) half q_smem[BLOCK_M * HEAD_DIM];
-    __shared__ __align__(16) half k_smem[BLOCK_N * HEAD_DIM];
-    __shared__ __align__(16) half v_smem[BLOCK_N * HEAD_DIM];
+    __shared__ __align__(16) half k_smem[2][BLOCK_N * HEAD_DIM];
+    __shared__ __align__(16) half v_smem[2][BLOCK_N * HEAD_DIM];
 
     float scale = rsqrtf((float)HEAD_DIM);
 
@@ -105,7 +132,13 @@ __global__ void kernel_flash_attention_integrated(
     const half* g_q_block = q + batch * (num_heads * query_len * HEAD_DIM) + head * (query_len * HEAD_DIM) + q_block_id * BLOCK_M * HEAD_DIM;
     half* g_o_block = output + batch * (num_heads * query_len * HEAD_DIM) + head * (query_len * HEAD_DIM) + q_block_id * BLOCK_M * HEAD_DIM;
 
+    const int kv_tiles = key_len / BLOCK_N;
+
     copy_half_tile_16b(q_smem, g_q_block, BLOCK_M * HEAD_DIM);
+    copy_half_tile_async_16b(k_smem[0], g_k_base, BLOCK_N * HEAD_DIM);
+    copy_half_tile_async_16b(v_smem[0], g_v_base, BLOCK_N * HEAD_DIM);
+    cp_async_commit_group();
+    cp_async_wait_group_0();
     __syncthreads();
 
     int group_id = lane_id / 4;
@@ -124,12 +157,19 @@ __global__ void kernel_flash_attention_integrated(
         o_frag[vc][3] = 0.0f;
     }
 
-    for(int offset = 0; offset < key_len * HEAD_DIM; offset += BLOCK_N * HEAD_DIM) {
-        const half* g_k_block = g_k_base + offset;
-        const half* g_v_block = g_v_base + offset;
-        copy_half_tile_16b(k_smem, g_k_block, BLOCK_N * HEAD_DIM);
-        copy_half_tile_16b(v_smem, g_v_block, BLOCK_N * HEAD_DIM);
-        __syncthreads();
+    for(int kv_tile = 0; kv_tile < kv_tiles; ++kv_tile) {
+        int stage = kv_tile & 1;
+        int next_tile = kv_tile + 1;
+        if (next_tile < kv_tiles) {
+            int next_stage = stage ^ 1;
+            int next_offset = next_tile * BLOCK_N * HEAD_DIM;
+            copy_half_tile_async_16b(k_smem[next_stage], g_k_base + next_offset, BLOCK_N * HEAD_DIM);
+            copy_half_tile_async_16b(v_smem[next_stage], g_v_base + next_offset, BLOCK_N * HEAD_DIM);
+            cp_async_commit_group();
+        }
+
+        half* k_tile_smem = k_smem[stage];
+        half* v_tile_smem = v_smem[stage];
 
         constexpr int NUM_S_ACC = BLOCK_N / 8;
         float s_acc[NUM_S_ACC][4];
@@ -159,7 +199,7 @@ __global__ void kernel_flash_attention_integrated(
                 int b_mat   = (lane_id >> 3) & 1;
                 int b_row_n = ns * 8 + (lane_id & 7);
                 int b_col_d = d0 + b_mat * 8;
-                uint32_t b_addr = smem_u32(k_smem + b_row_n * HEAD_DIM + b_col_d);
+                uint32_t b_addr = smem_u32(k_tile_smem + b_row_n * HEAD_DIM + b_col_d);
                 ldmatrix_x2(b, b_addr);
 
                 mma_m16n8k16(a, b, s_acc[ns]);
@@ -244,13 +284,16 @@ __global__ void kernel_flash_attention_integrated(
                 int v_mat    = ldm_lane >> 3;
                 int v_row    = mma_block * 16 + v_mat * 8 + (ldm_lane & 7);
 
-                uint32_t v_addr = smem_u32(v_smem + v_row * HEAD_DIM + v_col);
+                uint32_t v_addr = smem_u32(v_tile_smem + v_row * HEAD_DIM + v_col);
                 ldmatrix_x2_trans(v_frag, v_addr);
 
                 mma_m16n8k16(p, v_frag, o_frag[vc]);
             }
         }
-        __syncthreads();
+        if (next_tile < kv_tiles) {
+            cp_async_wait_group_0();
+            __syncthreads();
+        }
     }
 
     #pragma unroll
