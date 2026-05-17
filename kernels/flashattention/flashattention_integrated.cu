@@ -21,6 +21,12 @@ __device__ __forceinline__ uint32_t pack_f32_to_f16x2(float lo, float hi) {
     return r;
 }
 
+__device__ __forceinline__ float exp2_approx(float x) {
+    float r;
+    asm volatile("ex2.approx.ftz.f32 %0, %1;" : "=f"(r) : "f"(x));
+    return r;
+}
+
 __device__ __forceinline__ uint32_t smem_u32(const void* ptr) {
     uint32_t addr;
     asm volatile(
@@ -118,7 +124,7 @@ __global__ void kernel_flash_attention_integrated(
     __shared__ __align__(16) half k_smem[2][BLOCK_N * HEAD_DIM];
     __shared__ __align__(16) half v_smem[2][BLOCK_N * HEAD_DIM];
 
-    float scale = rsqrtf((float)HEAD_DIM);
+    float scale = rsqrtf((float)HEAD_DIM) * 1.4426950408889634f;
 
     const int batch = blockIdx.z;
     const int head = blockIdx.y;
@@ -240,10 +246,10 @@ __global__ void kernel_flash_attention_integrated(
         float local_sum1 = 0.0f;
         #pragma unroll
         for(int ns = 0; ns < NUM_S_ACC; ns++){
-            float s_acc_ns_0 = __expf(s_acc[ns][0] - local_max0);
-            float s_acc_ns_1 = __expf(s_acc[ns][1] - local_max0);
-            float s_acc_ns_2 = __expf(s_acc[ns][2] - local_max1);
-            float s_acc_ns_3 = __expf(s_acc[ns][3] - local_max1);
+            float s_acc_ns_0 = exp2_approx(s_acc[ns][0] - local_max0);
+            float s_acc_ns_1 = exp2_approx(s_acc[ns][1] - local_max0);
+            float s_acc_ns_2 = exp2_approx(s_acc[ns][2] - local_max1);
+            float s_acc_ns_3 = exp2_approx(s_acc[ns][3] - local_max1);
             s_acc[ns][0] = s_acc_ns_0;
             s_acc[ns][1] = s_acc_ns_1;
             s_acc[ns][2] = s_acc_ns_2;
@@ -256,8 +262,8 @@ __global__ void kernel_flash_attention_integrated(
         local_sum1 += __shfl_xor_sync(0xffffffff, local_sum1, 1, 4);
         local_sum1 += __shfl_xor_sync(0xffffffff, local_sum1, 2, 4);
 
-        float old_scale0 = __expf(old_max0 - local_max0);
-        float old_scale1 = __expf(old_max1 - local_max1);
+        float old_scale0 = exp2_approx(old_max0 - local_max0);
+        float old_scale1 = exp2_approx(old_max1 - local_max1);
         local_sum0 += l0 * old_scale0;
         local_sum1 += l1 * old_scale1;
         l0 = local_sum0;
