@@ -10,6 +10,7 @@
 #define BLOCK_M 64
 #define BLOCK_N 64
 #define HEAD_DIM 64
+#define HEAD_DIM_BLOCKS (HEAD_DIM / 8)
 
 __device__ __forceinline__ uint32_t pack_f32_to_f16x2(float lo, float hi) {
     uint32_t r;
@@ -73,13 +74,25 @@ __device__ __forceinline__ void mma_m16n8k16(uint32_t a[4], uint32_t b[2], float
     );
 }
 
+__device__ __forceinline__ int swizzled_col(int row, int col) {
+    int block_col = col >> 3;
+    int inner_col = col & 7;
+    return ((block_col ^ (row & (HEAD_DIM_BLOCKS - 1))) << 3) + inner_col;
+}
+
+__device__ __forceinline__ half* swizzled_ptr(half* base, int row, int col) {
+    return base + row * HEAD_DIM + swizzled_col(row, col);
+}
+
 __device__ __forceinline__ void copy_half_tile_16b(half* dst, const half* src, int num_half) {
     constexpr int HALF_PER_VEC = sizeof(int4) / sizeof(half);
     int vec_count = num_half / HALF_PER_VEC;
-    int4* dst_vec = reinterpret_cast<int4*>(dst);
     const int4* src_vec = reinterpret_cast<const int4*>(src);
     for (int idx = threadIdx.x; idx < vec_count; idx += blockDim.x) {
-        dst_vec[idx] = src_vec[idx];
+        int row = idx / HEAD_DIM_BLOCKS;
+        int block_col = idx - row * HEAD_DIM_BLOCKS;
+        int4* dst_vec = reinterpret_cast<int4*>(swizzled_ptr(dst, row, block_col * 8));
+        *dst_vec = src_vec[idx];
     }
 }
 
@@ -103,10 +116,11 @@ __device__ __forceinline__ void cp_async_wait_group_0() {
 __device__ __forceinline__ void copy_half_tile_async_16b(half* dst, const half* src, int num_half) {
     constexpr int HALF_PER_VEC = sizeof(int4) / sizeof(half);
     int vec_count = num_half / HALF_PER_VEC;
-    int4* dst_vec = reinterpret_cast<int4*>(dst);
     const int4* src_vec = reinterpret_cast<const int4*>(src);
     for (int idx = threadIdx.x; idx < vec_count; idx += blockDim.x) {
-        cp_async_16b(dst_vec + idx, src_vec + idx);
+        int row = idx / HEAD_DIM_BLOCKS;
+        int block_col = idx - row * HEAD_DIM_BLOCKS;
+        cp_async_16b(swizzled_ptr(dst, row, block_col * 8), src_vec + idx);
     }
 }
 
@@ -196,7 +210,7 @@ __global__ void kernel_flash_attention_integrated(
             int a_row = q_i + a_row8 + ((a_mat & 1) ? 8 : 0);
             int a_col = d0 + ((a_mat >= 2) ? 8 : 0);
 
-            uint32_t a_addr = smem_u32(q_smem + a_row * HEAD_DIM + a_col);
+            uint32_t a_addr = smem_u32(swizzled_ptr(q_smem, a_row, a_col));
             ldmatrix_x4(a, a_addr);
 
             #pragma unroll
@@ -205,7 +219,7 @@ __global__ void kernel_flash_attention_integrated(
                 int b_mat   = (lane_id >> 3) & 1;
                 int b_row_n = ns * 8 + (lane_id & 7);
                 int b_col_d = d0 + b_mat * 8;
-                uint32_t b_addr = smem_u32(k_tile_smem + b_row_n * HEAD_DIM + b_col_d);
+                uint32_t b_addr = smem_u32(swizzled_ptr(k_tile_smem, b_row_n, b_col_d));
                 ldmatrix_x2(b, b_addr);
 
                 mma_m16n8k16(a, b, s_acc[ns]);
@@ -290,7 +304,7 @@ __global__ void kernel_flash_attention_integrated(
                 int v_mat    = ldm_lane >> 3;
                 int v_row    = mma_block * 16 + v_mat * 8 + (ldm_lane & 7);
 
-                uint32_t v_addr = smem_u32(v_tile_smem + v_row * HEAD_DIM + v_col);
+                uint32_t v_addr = smem_u32(swizzled_ptr(v_tile_smem, v_row, v_col));
                 ldmatrix_x2_trans(v_frag, v_addr);
 
                 mma_m16n8k16(p, v_frag, o_frag[vc]);
