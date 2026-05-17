@@ -8,6 +8,11 @@ from typing import Callable
 import torch
 from torch.utils.cpp_extension import load
 
+try:
+    from flash_attn import flash_attn_func
+except ImportError:
+    flash_attn_func = None
+
 
 KERNEL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = KERNEL_DIR.parents[1]
@@ -25,6 +30,7 @@ VERIFY = True
 KERNELS = [
     ("naive", "flashattention_naive.cu", "flash_attention", False),
     ("mma", "flashattention_mma.cu", "flash_attention_mma", True),
+    ("integrated", "flashattention_integrated.cu", "flash_attention_integrated", True),
 ]
 
 
@@ -94,7 +100,7 @@ def measure_ms(launch: Callable[[], None], prepare: Callable[[], None]) -> float
     return best
 
 
-def run_impl(name: str, backend: str, launch: Callable[[], None], prepare: Callable[[], None], verify: Callable[[], bool], num_bytes: float) -> bool:
+def run_impl(name: str, backend: str, launch: Callable[[], None], prepare: Callable[[], None], verify: Callable[[], bool], num_bytes: float) -> tuple[bool, float]:
     for _ in range(WARMUP):
         prepare()
         launch()
@@ -111,7 +117,25 @@ def run_impl(name: str, backend: str, launch: Callable[[], None], prepare: Calla
     ops = (attention_scores * float(HEAD_DIM) * 4.0 + attention_scores * 5.0) / (best_ms * 1e6)
     bandwidth = num_bytes / (best_ms * 1e6)
     print(f"[flashattention/{backend}:{name}] best={best_ms:.4f} ms, {ops:.3f} GOP/s, {bandwidth:.3f} GB/s, verify={status}")
-    return True if passed is None else passed
+    return (True if passed is None else passed), best_ms
+
+
+def add_official_flashattention(implementations: list[tuple[str, str, Callable[..., None], bool]]) -> None:
+    if flash_attn_func is None:
+        print("[flashattention/official:flash-attn] SKIP: flash_attn is not installed")
+        return
+
+    def launch(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, out: dict[str, torch.Tensor]) -> None:
+        out["value"] = flash_attn_func(
+            q,
+            k,
+            v,
+            dropout_p=0.0,
+            softmax_scale=1.0 / math.sqrt(HEAD_DIM),
+            causal=False,
+        )
+
+    implementations.append(("flash-attn", "official", launch, True))
 
 
 def main() -> int:
@@ -128,29 +152,70 @@ def main() -> int:
         (name, "cuda", make_launch(name, source, symbol, use_half), use_half)
         for name, source, symbol, use_half in KERNELS
     ]
+    add_official_flashattention(implementations)
     implementations.append(("torch", "pytorch", lambda q, k, v, out: out.copy_(reference(q, k, v)), False))
 
     all_passed = True
+    timings: dict[tuple[str, str], float] = {}
     for name, backend, fn, use_half in implementations:
         dtype = torch.float16 if use_half else torch.float32
-        q = base_q.to(dtype=dtype)
-        k = base_k.to(dtype=dtype)
-        v = base_v.to(dtype=dtype)
-        out = torch.empty_like(q)
-        ref = reference(q, k, v) if VERIFY else None
+        q_bhld = base_q.to(dtype=dtype)
+        k_bhld = base_k.to(dtype=dtype)
+        v_bhld = base_v.to(dtype=dtype)
+
+        if backend == "official":
+            q = q_bhld.transpose(1, 2).contiguous()
+            k = k_bhld.transpose(1, 2).contiguous()
+            v = v_bhld.transpose(1, 2).contiguous()
+            out = {"value": torch.empty_like(q)}
+            output_numel = out["value"].numel()
+            ref = reference(q_bhld, k_bhld, v_bhld).transpose(1, 2).contiguous() if VERIFY else None
+            launch = lambda fn=fn, q=q, k=k, v=v, out=out: fn(q, k, v, out)
+            prepare = lambda: None
+            verify = lambda out=out, ref=ref: True if ref is None else compare_tensors(out["value"], ref, atol, rtol)
+        else:
+            q = q_bhld
+            k = k_bhld
+            v = v_bhld
+            out = torch.empty_like(q)
+            output_numel = out.numel()
+            ref = reference(q, k, v) if VERIFY else None
+            launch = lambda fn=fn, q=q, k=k, v=v, out=out: fn(q, k, v, out)
+            prepare = lambda out=out: out.zero_()
+            verify = lambda out=out, ref=ref: True if ref is None else compare_tensors(out, ref, atol, rtol)
+
         atol = 2e-3 if dtype == torch.float16 else 1e-4
         rtol = 2e-3 if dtype == torch.float16 else 1e-4
-        num_bytes = float(q.numel() + k.numel() + v.numel() + out.numel()) * q.element_size()
+        num_bytes = float(q.numel() + k.numel() + v.numel() + output_numel) * q.element_size()
 
-        passed = run_impl(
+        passed, best_ms = run_impl(
             name,
             backend,
-            lambda fn=fn: fn(q, k, v, out),
-            lambda: out.zero_(),
-            lambda ref=ref, atol=atol, rtol=rtol: True if ref is None else compare_tensors(out, ref, atol, rtol),
+            launch,
+            prepare,
+            verify,
             num_bytes,
         )
+        timings[(backend, name)] = best_ms
         all_passed = passed and all_passed
+
+    mma_ms = timings.get(("cuda", "mma"))
+    integrated_ms = timings.get(("cuda", "integrated"))
+    official_ms = timings.get(("official", "flash-attn"))
+    if mma_ms is not None and official_ms is not None:
+        print(
+            f"[flashattention/compare:mma_vs_flash-attn] "
+            f"mma={mma_ms:.4f} ms, flash-attn={official_ms:.4f} ms, "
+            f"mma/flash-attn={mma_ms / official_ms:.3f}x, "
+            f"flash-attn/mma={official_ms / mma_ms:.3f}x"
+        )
+    if mma_ms is not None and integrated_ms is not None and official_ms is not None:
+        print(
+            f"[flashattention/compare:three] "
+            f"mma={mma_ms:.4f} ms, integrated={integrated_ms:.4f} ms, flash-attn={official_ms:.4f} ms, "
+            f"integrated/mma={integrated_ms / mma_ms:.3f}x, "
+            f"integrated/flash-attn={integrated_ms / official_ms:.3f}x"
+        )
     return 0 if all_passed else 2
 
 
