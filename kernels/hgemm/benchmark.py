@@ -27,6 +27,7 @@ KERNELS = [
     ("2_pipeline", "hgemm_pipeline.cu", "hgemm_2_pipeline"),
     ("3_pipeline", "hgemm_pipeline.cu", "hgemm_3_pipeline"),
     ("4_pipeline", "hgemm_pipeline.cu", "hgemm_4_pipeline"),
+    ("cublas", "hgemm_cublas.cu", "hgemm_cublas"),
 ]
 
 
@@ -51,6 +52,7 @@ def load_kernel(name: str, source: str):
         extra_include_paths=include_paths(),
         extra_cflags=["-O3", "-std=c++17"],
         extra_cuda_cflags=["-O3", "-std=c++17"],
+        extra_ldflags=["-lcublas"],
         build_directory=str(build_dir),
         verbose=False,
     )
@@ -120,12 +122,15 @@ def main() -> int:
     torch_ref = torch.matmul(a, b.t()) if VERIFY else None
     num_bytes = float((M * K + N * K + M * N) * a.element_size())
 
-    implementations = [(name, "cuda", make_launch(name, source, symbol)) for name, source, symbol in KERNELS]
+    implementations = [
+        (name, "cublas" if name == "cublas" else "cuda", make_launch(name, source, symbol))
+        for name, source, symbol in KERNELS
+    ]
     implementations.append(("torch", "pytorch", lambda lhs, rhs, output: torch.matmul(lhs, rhs.t(), out=output)))
 
     all_passed = True
     for name, backend, fn in implementations:
-        ref = torch_ref if backend == "pytorch" else kernel_ref
+        ref = torch_ref if backend in {"pytorch", "cublas"} else kernel_ref
         passed = run_impl(
             name,
             backend,
